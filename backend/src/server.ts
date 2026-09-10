@@ -38,36 +38,50 @@ rawOrigins.forEach((str) => {
   }
 });
 
-const defaultDevOrigins = [
+const defaultOrigins = [
+  'https://my-diary-nine-tau.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://localhost:3000',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
+  'http://127.0.0.1:3000',
 ];
 
-const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultDevOrigins]));
+const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, server-to-server, or curl/Postman)
-      if (!origin) {
-        return callback(null, true);
-      }
-      const cleanOrigin = origin.replace(/\/$/, '');
-      if (allowedOrigins.includes(cleanOrigin)) {
-        return callback(null, true);
-      }
-      // If in development or staging, be permissive
-      if (process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      // In production, reject unauthorized origins
-      callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
-    },
-    credentials: true,
-  })
-);
+const isOriginAllowed = (origin: string): boolean => {
+  const cleanOrigin = origin.replace(/\/$/, '');
+  if (allowedOrigins.includes(cleanOrigin)) {
+    return true;
+  }
+  // Allow all Vercel deployments for this frontend
+  if (/^https:\/\/my-diary-.*\.vercel\.app$/.test(cleanOrigin) || cleanOrigin.endsWith('.vercel.app')) {
+    return true;
+  }
+  return false;
+};
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, server-to-server, or curl/Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    if (isOriginAllowed(origin) || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    // Reject unauthorized origin without throwing an error that breaks preflight response
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
