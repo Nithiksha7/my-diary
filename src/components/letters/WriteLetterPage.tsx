@@ -213,7 +213,7 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
     if (typeof window !== 'undefined' && window.location.origin) {
       return window.location.origin;
     }
-    return 'http://localhost:5173';
+    return import.meta.env.PROD ? 'https://my-diary-nine-tau.vercel.app' : 'http://localhost:5173';
   };
 
   const getLetterPublicUrl = (token: string) => {

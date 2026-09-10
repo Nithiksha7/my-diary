@@ -15,7 +15,7 @@ import {
   generatePublicToken,
   hashToken,
 } from './dist/utils/crypto.js';
-import { EmailService } from './dist/services/emailService.js';
+import { EmailService, getPublicFrontendUrl } from './dist/services/emailService.js';
 import { processScheduledLettersBatch } from './dist/services/schedulerService.js';
 import {
   createLetter,
@@ -258,6 +258,56 @@ async function runTests() {
     assert(emailResult.isConfigRequired === true, 'EmailService returns isConfigRequired=true when RESEND_API_KEY is unset');
   } else {
     assert(typeof emailResult.success === 'boolean', 'EmailService interacts with real Resend API endpoint');
+  }
+
+  // Frontend URL Resolution Tests for Production & Local Development
+  console.log('\n[9b. Public Frontend URL Resolution for Letter Links]');
+  const savedEnv = { ...process.env };
+
+  try {
+    // Test 1: Production mode with APP_PUBLIC_URL
+    process.env.NODE_ENV = 'production';
+    process.env.APP_PUBLIC_URL = 'https://my-diary-nine-tau.vercel.app';
+    delete process.env.FRONTEND_URL;
+    delete process.env.VITE_PUBLIC_APP_URL;
+    delete process.env.CORS_ORIGIN;
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects APP_PUBLIC_URL in production');
+
+    // Test 2: Production mode with FRONTEND_URL comma-separated
+    delete process.env.APP_PUBLIC_URL;
+    process.env.FRONTEND_URL = 'https://my-diary-nine-tau.vercel.app,http://localhost:5173';
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() parses comma-separated FRONTEND_URL and selects production origin');
+
+    // Test 3: Production mode with VITE_PUBLIC_APP_URL
+    delete process.env.FRONTEND_URL;
+    process.env.VITE_PUBLIC_APP_URL = 'https://my-diary-nine-tau.vercel.app';
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects VITE_PUBLIC_APP_URL');
+
+    // Test 4: Production mode with CORS_ORIGIN
+    delete process.env.VITE_PUBLIC_APP_URL;
+    process.env.CORS_ORIGIN = 'https://my-diary-nine-tau.vercel.app';
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects CORS_ORIGIN');
+
+    // Test 5: Production mode with no env vars set (fallback)
+    delete process.env.CORS_ORIGIN;
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() defaults to https://my-diary-nine-tau.vercel.app in production when unset');
+
+    // Test 6: Production mode with localhost misconfigured in env var (prevents localhost in prod)
+    process.env.APP_PUBLIC_URL = 'http://localhost:5173';
+    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() filters out localhost in production and falls back safely');
+
+    // Test 7: Local development with no env vars set
+    process.env.NODE_ENV = 'development';
+    delete process.env.APP_PUBLIC_URL;
+    delete process.env.RENDER;
+    delete process.env.VERCEL;
+    assert(getPublicFrontendUrl() === 'http://localhost:5173', 'getPublicFrontendUrl() defaults to http://localhost:5173 in local development');
+
+    // Test 8: Local development with custom port (e.g. 5174)
+    process.env.APP_PUBLIC_URL = 'http://localhost:5174';
+    assert(getPublicFrontendUrl() === 'http://localhost:5174', 'getPublicFrontendUrl() preserves custom local port in development');
+  } finally {
+    process.env = savedEnv;
   }
 
   // 10. PHASE 8 — Server-Side Scheduler & Atomic Status Transition Tests

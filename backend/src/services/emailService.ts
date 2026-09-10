@@ -187,6 +187,63 @@ With warmth,
 My Diary`;
 }
 
+/**
+ * Resolves the public frontend base URL used for links in emails and notifications.
+ *
+ * Priority order for environment variables:
+ * 1. APP_PUBLIC_URL
+ * 2. FRONTEND_URL (first valid URL if comma-separated)
+ * 3. VITE_PUBLIC_APP_URL
+ * 4. CORS_ORIGIN (first valid URL if comma-separated)
+ *
+ * Behavior:
+ * - Production: Defaults to 'https://my-diary-nine-tau.vercel.app' and ensures
+ *   no localhost/127.0.0.1 link is ever emitted in production emails.
+ * - Local Development: Defaults to 'http://localhost:5173' (or custom port/host if configured in env).
+ */
+export function getPublicFrontendUrl(): string {
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.RENDER || process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT || process.env.HEROKU_APP_NAME);
+
+  const rawCandidates = [
+    process.env.APP_PUBLIC_URL,
+    process.env.FRONTEND_URL,
+    process.env.VITE_PUBLIC_APP_URL,
+    process.env.CORS_ORIGIN,
+  ];
+
+  const extractedUrls: string[] = [];
+  for (const candidate of rawCandidates) {
+    if (candidate && typeof candidate === 'string') {
+      const parts = candidate.split(',');
+      for (const part of parts) {
+        const cleaned = part.trim().replace(/\/$/, '');
+        if (cleaned && /^https?:\/\//i.test(cleaned)) {
+          extractedUrls.push(cleaned);
+        }
+      }
+    }
+  }
+
+  if (isProduction) {
+    // In production, select the first valid candidate that is not a local address
+    const prodUrl = extractedUrls.find((url) => !/localhost|127\.0\.0\.1/i.test(url));
+    if (prodUrl) {
+      return prodUrl;
+    }
+    // Hard fallback for production
+    return 'https://my-diary-nine-tau.vercel.app';
+  }
+
+  // In local development, if an env candidate was specified (e.g. localhost:5174), use it
+  if (extractedUrls.length > 0) {
+    return extractedUrls[0];
+  }
+
+  return 'http://localhost:5173';
+}
+
 export class EmailService {
   /**
    * Checks if Resend API is configured in the environment
@@ -218,7 +275,7 @@ export class EmailService {
       };
     }
 
-    const publicUrl = (process.env.APP_PUBLIC_URL || process.env.VITE_PUBLIC_APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const publicUrl = getPublicFrontendUrl();
     const secureUrl = `${publicUrl}/letter/${rawToken}`;
     let fromAddress = process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || process.env.RESEND_FROM_EMAIL;
     if (!fromAddress || !fromAddress.trim()) {
