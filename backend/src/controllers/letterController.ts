@@ -213,25 +213,8 @@ export async function createLetter(
     const { isImmediate } = req.body;
     const letterType = type === 'me' ? 'me' : 'someone';
     const cleanRecipientName = letterType === 'me' ? 'Future Me' : (recipientName?.trim() || 'Recipient');
-    const channel = deliveryChannel ? String(deliveryChannel).toLowerCase().trim() : 'link';
-
-    if (channel !== 'link' && channel !== 'email') {
-      res.status(400).json({
-        success: false,
-        message: "Invalid delivery channel. Only 'link' and 'email' are supported.",
-      });
-      return;
-    }
-
-    let cleanRecipientEmail = recipientEmail?.trim() || undefined;
-    if (channel === 'email' && recipientContact?.trim()) {
-      cleanRecipientEmail = recipientContact.trim();
-    }
-
-    if (letterType === 'someone' && channel === 'email' && !cleanRecipientEmail) {
-      res.status(400).json({ success: false, message: 'Recipient email address is required for email delivery.' });
-      return;
-    }
+    const channel = 'link';
+    const cleanRecipientContact = recipientContact?.trim() || undefined;
 
     // 3. Validate schedule date & time
     const nowObj = new Date();
@@ -272,9 +255,8 @@ export async function createLetter(
       userId: req.userId,
       type: letterType,
       recipientName: cleanRecipientName,
-      recipientEmail: cleanRecipientEmail,
-      deliveryChannel: channel,
-      recipientContact: recipientContact?.trim() || cleanRecipientEmail,
+      deliveryChannel: 'link',
+      recipientContact: cleanRecipientContact,
       title: title.trim(),
       encryptedContent,
       encryptedToken,

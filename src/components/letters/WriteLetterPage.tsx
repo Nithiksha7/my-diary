@@ -6,7 +6,6 @@ import {
   Clock,
   Globe,
   AlertCircle,
-  Mail,
   Share2,
   CheckCircle2,
   Copy,
@@ -16,7 +15,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { useDiary } from '../../context/DiaryContext';
-import type { DeliveryChannel, LetterRecipientType, LetterRecord, ThemeId } from '../../types';
+import type { LetterRecipientType, LetterRecord, ThemeId } from '../../types';
 import {
   formatToDateKey,
   getUserTimezoneDetails,
@@ -36,32 +35,6 @@ const WAX_SEALS = [
   { id: '#6b21a8', name: 'Midnight Purple', bg: 'bg-purple-800', border: 'border-purple-400' },
 ];
 
-const DELIVERY_CHANNELS: {
-  id: DeliveryChannel;
-  name: string;
-  icon: React.ReactNode;
-  placeholder: string;
-  inputLabel: string;
-  description: string;
-}[] = [
-  {
-    id: 'link',
-    name: 'Private Link',
-    icon: <Globe className="w-4 h-4 text-purple-400" />,
-    inputLabel: 'Recipient Note (Optional)',
-    placeholder: 'e.g. For Lucas, Private envelope link',
-    description: 'Create a secure private link that can be shared with the recipient.',
-  },
-  {
-    id: 'email',
-    name: 'Email',
-    icon: <Mail className="w-4 h-4 text-amber-400" />,
-    inputLabel: 'Recipient Email Address *',
-    placeholder: 'e.g. friend@example.com',
-    description: "Automatically send the private letter link to the recipient's email when the delivery time arrives.",
-  },
-];
-
 export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }) => {
   const { activeTheme, createLetter } = useDiary();
   const tz = getUserTimezoneDetails();
@@ -71,8 +44,6 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
 
   // Form states
   const [recipientName, setRecipientName] = useState(type === 'me' ? 'Future Me' : '');
-  const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(type === 'me' ? 'link' : 'link');
-  const [recipientContact, setRecipientContact] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [sealColor, setSealColor] = useState('#b91c1c');
@@ -125,19 +96,6 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
   const handleConfirmSeal = async () => {
     setModalError(null);
 
-    // Validate delivery details inside the popup modal
-    if (type === 'someone' && deliveryChannel === 'email') {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!recipientContact.trim()) {
-        setModalError('Recipient email address is required for Email delivery.');
-        return;
-      }
-      if (!emailRegex.test(recipientContact.trim())) {
-        setModalError('Please enter a valid recipient email address.');
-        return;
-      }
-    }
-
     if (deliveryMode === 'later' && (!scheduledDate || !scheduledTime)) {
       setModalError('Please specify the delivery date and time.');
       return;
@@ -146,7 +104,6 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
     setIsSubmitting(true);
     try {
       const isImmediate = deliveryMode === 'now';
-      const emailValue = deliveryChannel === 'email' ? recipientContact.trim() : undefined;
       const targetDate = isImmediate ? undefined : scheduledDate;
       const targetTime = isImmediate ? undefined : scheduledTime;
       const targetTimestamp = isImmediate
@@ -156,9 +113,7 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
       const created = await createLetter({
         type,
         recipientName: type === 'me' ? 'Future Me' : recipientName.trim(),
-        recipientEmail: emailValue,
-        deliveryChannel,
-        recipientContact: recipientContact.trim() || undefined,
+        deliveryChannel: 'link',
         title: title.trim(),
         content: content.trim(),
         scheduledDeliveryDate: targetDate,
@@ -619,74 +574,16 @@ export const WriteLetterPage: React.FC<WriteLetterPageProps> = ({ type, onBack }
               </div>
             )}
 
-            {/* Delivery Method Selector (if Letter to Someone) */}
+            {/* Private Link Delivery Notice (if Letter to Someone) */}
             {type === 'someone' && (
-              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/10">
-                <label className="block text-xs font-serif font-bold text-white/90">
-                  Delivery Method
+              <div className="space-y-2 p-4 rounded-2xl bg-white/5 border border-white/10 text-left">
+                <label className="block text-xs font-serif font-bold text-amber-300 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Private Link Delivery</span>
                 </label>
-                <div className="space-y-2">
-                  {DELIVERY_CHANNELS.map((channel) => (
-                    <button
-                      key={channel.id}
-                      type="button"
-                      onClick={() => setDeliveryChannel(channel.id)}
-                      className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        deliveryChannel === channel.id
-                          ? 'bg-amber-500/25 border-amber-400 text-white ring-2 ring-amber-300/60 font-extrabold shadow-glow'
-                          : 'bg-black/40 hover:bg-white/10 border-white/15 text-white/80 font-bold'
-                      }`}
-                    >
-                      <div className="p-2 rounded-lg bg-black/40 border border-white/10 shrink-0 mt-0.5">
-                        {channel.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-serif font-extrabold text-white">{channel.name}</span>
-                          <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                            deliveryChannel === channel.id
-                              ? 'border-amber-400 bg-amber-400'
-                              : 'border-white/40 bg-transparent'
-                          }`}>
-                            {deliveryChannel === channel.id && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />
-                            )}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-serif text-white/70 mt-0.5 leading-relaxed">
-                          {channel.description}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Email Address Input (Required for Email Channel) */}
-                {deliveryChannel === 'email' ? (
-                  <div className="pt-2">
-                    <label className="block text-xs font-serif font-bold text-white/90 mb-1 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Recipient Email Address *</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="e.g. friend@example.com"
-                      value={recipientContact}
-                      onChange={(e) => setRecipientContact(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/20 focus:border-amber-400 text-xs font-mono text-white placeholder:text-white/40 focus:outline-none transition-colors"
-                    />
-                    <span className="text-[10px] font-serif text-white/60 block mt-1">
-                      ℹ The private letter link will be emailed to the recipient when the delivery time arrives.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="pt-1">
-                    <span className="text-[11px] font-serif text-amber-200/90 block">
-                      🔗 A secure private link will be generated immediately for you to copy and share. No recipient email required.
-                    </span>
-                  </div>
-                )}
+                <p className="text-[11px] font-serif text-white/80 leading-relaxed">
+                  A secure private link will be generated for this letter. You can copy the link or share it directly with {recipientName.trim() || 'the recipient'} via your device (WhatsApp, Messages, AirDrop, etc.).
+                </p>
               </div>
             )}
 

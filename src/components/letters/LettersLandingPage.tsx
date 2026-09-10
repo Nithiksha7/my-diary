@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Mail,
   Heart,
   Sparkles,
   Lock,
@@ -11,14 +10,13 @@ import {
   Feather,
   Globe,
   CheckCircle2,
-  AlertCircle,
   Copy,
   Check,
   Share2,
   Filter
 } from 'lucide-react';
 import { useDiary } from '../../context/DiaryContext';
-import type { DeliveryChannel, LetterRecipientType } from '../../types';
+import type { LetterRecipientType } from '../../types';
 import { formatTime12h, calculateRemainingCountdown } from '../../utils/dateUtils';
 import { WriteLetterPage } from './WriteLetterPage';
 import { LetterEnvelopeViewer } from './LetterEnvelopeViewer';
@@ -64,8 +62,6 @@ export const LettersLandingPage: React.FC = () => {
     activeLetterToken,
     setActiveLetterToken,
     refreshLetters,
-    retryLetterDelivery,
-    updateLetterRecipient,
   } = useDiary();
 
   // Navigation mode: 'landing' | 'write-someone' | 'write-me'
@@ -74,26 +70,7 @@ export const LettersLandingPage: React.FC = () => {
 
   // Filter state: 'all' | 'scheduled' | 'delivered' | 'opened'
   const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'delivered' | 'opened'>('all');
-
-  // Recipient edit inline state
-  const [editingLetterId, setEditingLetterId] = useState<string | null>(null);
-  const [editContact, setEditContact] = useState('');
-  const [isUpdatingRecipient, setIsUpdatingRecipient] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
-
-  const getChannelIcon = (channel: DeliveryChannel | string = 'link') => {
-    if (channel === 'email') {
-      return <Mail className="w-3.5 h-3.5 text-amber-400" />;
-    }
-    return <Globe className="w-3.5 h-3.5 text-purple-400" />;
-  };
-
-  const getChannelLabel = (channel: DeliveryChannel | string = 'link') => {
-    if (channel === 'email') {
-      return 'Email';
-    }
-    return 'Private Link';
-  };
 
   const getOrigin = () => {
     const envUrl = import.meta.env.VITE_PUBLIC_APP_URL;
@@ -219,7 +196,7 @@ export const LettersLandingPage: React.FC = () => {
         <div className="group relative rounded-3xl p-6 sm:p-8 glass-panel border border-amber-400/30 bg-gradient-to-br from-black/85 via-black/75 to-amber-950/40 hover:border-amber-400/80 transition-all duration-300 shadow-2xl flex flex-col justify-between space-y-6 hover:scale-[1.01]">
           <div className="space-y-4">
             <div className="w-14 h-14 rounded-2xl bg-amber-500/25 border border-amber-400 text-amber-300 flex items-center justify-center shadow-glow group-hover:scale-105 transition-transform">
-              <Mail className="w-7 h-7" />
+              <Globe className="w-7 h-7 text-amber-300" />
             </div>
 
             <div className="space-y-1.5">
@@ -331,7 +308,7 @@ export const LettersLandingPage: React.FC = () => {
         {filteredLetters.length === 0 ? (
           /* Empty State */
           <div className="p-10 rounded-3xl glass-panel border border-white/15 bg-black/50 text-center space-y-3">
-            <Mail className="w-10 h-10 text-white/40 mx-auto" />
+            <Feather className="w-10 h-10 text-white/40 mx-auto" />
             <h3 className="font-serif font-bold text-base text-white">
               {statusFilter === 'all' ? 'No letters written yet.' : `No ${statusFilter} letters found.`}
             </h3>
@@ -357,21 +334,14 @@ export const LettersLandingPage: React.FC = () => {
 
               const isOpened = ltr.status === 'OPENED' || ltr.status === 'opened';
               const isDelivered = ltr.status === 'DELIVERED' || ltr.status === 'delivered';
-              const isDelivering = ltr.status === 'DELIVERING';
-              const isFailed = ltr.status === 'DELIVERY_FAILED';
-              const isConfigRequired = ltr.status === 'CONFIG_REQUIRED';
               const isReady = isOpened || isDelivered || isPastScheduled;
-
-              const isEditingThisLetter = editingLetterId === ltr.id;
               const isThisCopied = copiedToken === ltr.token;
 
               return (
                 <div
                   key={ltr.id}
                   className={`p-5 rounded-3xl glass-panel border transition-all space-y-4 flex flex-col justify-between shadow-xl ${
-                    isFailed
-                      ? 'border-rose-500/40 bg-gradient-to-b from-rose-950/20 to-black/85'
-                      : isOpened
+                    isOpened
                       ? 'border-purple-500/40 bg-gradient-to-b from-purple-950/20 to-black/85'
                       : isDelivered || isPastScheduled
                       ? 'border-emerald-500/40 bg-gradient-to-b from-emerald-950/20 to-black/85'
@@ -398,12 +368,6 @@ export const LettersLandingPage: React.FC = () => {
                             ? 'bg-purple-500/20 text-purple-300 border-purple-400/40'
                             : isDelivered || isPastScheduled
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                            : isDelivering
-                            ? 'bg-sky-500/20 text-sky-300 border-sky-400/40 animate-pulse'
-                            : isFailed
-                            ? 'bg-rose-500/20 text-rose-300 border-rose-400/40'
-                            : isConfigRequired
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
                             : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
                         }`}
                       >
@@ -411,12 +375,6 @@ export const LettersLandingPage: React.FC = () => {
                           ? 'OPENED'
                           : isDelivered || isPastScheduled
                           ? 'READY / DELIVERED'
-                          : isDelivering
-                          ? 'DELIVERING...'
-                          : isFailed
-                          ? 'DELIVERY FAILED'
-                          : isConfigRequired
-                          ? 'GATEWAY REQUIRED'
                           : 'SEALED & SCHEDULED'}
                       </span>
                     </div>
@@ -429,20 +387,13 @@ export const LettersLandingPage: React.FC = () => {
                     <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-serif text-white/85 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-white/60 flex items-center gap-1.5">
-                          {getChannelIcon(ltr.deliveryChannel)}
+                          <Globe className="w-3.5 h-3.5 text-purple-400" />
                           <span>Delivery:</span>
                         </span>
                         <span className="font-serif font-bold text-amber-300">
-                          {getChannelLabel(ltr.deliveryChannel)}
+                          Private Link
                         </span>
                       </div>
-
-                      {ltr.recipientContact && (
-                        <div className="flex items-center justify-between text-[11px] font-mono">
-                          <span className="text-white/50">Destination:</span>
-                          <span className="text-white/90">{ltr.recipientContact}</span>
-                        </div>
-                      )}
 
                       <div className="flex items-center justify-between pt-1.5 border-t border-white/10">
                         <span className="text-white/60">Date:</span>
@@ -452,7 +403,7 @@ export const LettersLandingPage: React.FC = () => {
                       </div>
 
                       {/* Timer Countdown (if still waiting) */}
-                      {!isPastScheduled && !isDelivered && !isOpened && !isFailed && (
+                      {!isPastScheduled && !isDelivered && !isOpened && (
                         <div className="flex items-center justify-between pt-1.5 border-t border-white/10">
                           <span className="text-white/60">Timer:</span>
                           <LiveCountdownBadge
@@ -470,78 +421,6 @@ export const LettersLandingPage: React.FC = () => {
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                             <span>{isOpened ? 'Letter has been opened by recipient' : 'Ready for recipient to open'}</span>
                           </span>
-                        </div>
-                      )}
-
-                      {/* Delivery Failure Handler */}
-                      {isFailed && (
-                        <div className="pt-2 border-t border-rose-500/20 text-xs font-serif space-y-2">
-                          <div className="flex items-start gap-1.5 text-rose-300 font-bold">
-                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                            <span>Delivery Error: {ltr.deliveryFailureReason || 'Unable to dispatch email.'}</span>
-                          </div>
-
-                          {isEditingThisLetter ? (
-                            <div className="p-2.5 rounded-xl bg-black/70 border border-white/20 space-y-2">
-                              <label className="block text-[10px] font-mono text-white/70">
-                                Enter New Recipient Email / Address:
-                              </label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={editContact}
-                                  onChange={(e) => setEditContact(e.target.value)}
-                                  placeholder="recipient@example.com"
-                                  className="flex-1 px-3 py-1.5 rounded-lg bg-black/80 border border-white/30 text-xs font-mono text-white focus:outline-none focus:border-amber-400"
-                                />
-                                <button
-                                  type="button"
-                                  disabled={isUpdatingRecipient || !editContact.trim()}
-                                  onClick={async () => {
-                                    if (!editContact.trim()) return;
-                                    setIsUpdatingRecipient(true);
-                                    await updateLetterRecipient(ltr.id, editContact.trim());
-                                    setIsUpdatingRecipient(false);
-                                    setEditingLetterId(null);
-                                    setEditContact('');
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-serif font-extrabold text-xs cursor-pointer shadow-glow"
-                                >
-                                  Save & Retry
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingLetterId(null);
-                                    setEditContact('');
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-white/70"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => retryLetterDelivery(ltr.id)}
-                                className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/50 text-xs font-serif font-bold text-rose-200 transition-colors cursor-pointer flex items-center gap-1"
-                              >
-                                <span>Retry Delivery</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingLetterId(ltr.id);
-                                  setEditContact(ltr.recipientContact || ltr.recipientEmail || '');
-                                }}
-                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-serif font-bold text-white transition-colors cursor-pointer"
-                              >
-                                <span>Change Recipient</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>

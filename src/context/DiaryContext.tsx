@@ -108,7 +108,6 @@ interface DiaryContextType {
   createLetter: (data: {
     type: LetterRecipientType;
     recipientName: string;
-    recipientEmail?: string;
     deliveryChannel?: DeliveryChannel;
     recipientContact?: string;
     title: string;
@@ -1012,7 +1011,6 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const createLetter = useCallback(async (data: {
     type: LetterRecipientType;
     recipientName: string;
-    recipientEmail?: string;
     deliveryChannel?: DeliveryChannel;
     recipientContact?: string;
     title: string;
@@ -1038,9 +1036,8 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `ltr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       type: data.type,
       recipientName: data.recipientName.trim(),
-      recipientEmail: data.recipientEmail?.trim() || undefined,
-      deliveryChannel: data.deliveryChannel || 'link',
-      recipientContact: data.recipientContact?.trim() || data.recipientEmail?.trim() || undefined,
+      deliveryChannel: 'link',
+      recipientContact: data.recipientContact?.trim() || undefined,
       title: data.title.trim(),
       content: data.content.trim(),
       scheduledDeliveryDate: targetDate,

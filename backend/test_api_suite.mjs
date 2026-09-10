@@ -15,7 +15,6 @@ import {
   generatePublicToken,
   hashToken,
 } from './dist/utils/crypto.js';
-import { EmailService, getPublicFrontendUrl } from './dist/services/emailService.js';
 import { processScheduledLettersBatch } from './dist/services/schedulerService.js';
 import {
   createLetter,
@@ -179,41 +178,7 @@ async function runTests() {
   );
   assert(rejectContent, 'createLetter rejects empty letter content with 400');
 
-  // Test 8c: Reject missing recipient email for someone with email channel
-  let rejectEmail = false;
-  await createLetter(
-    { userId: testUserId, body: { type: 'someone', recipientName: 'Alice', deliveryChannel: 'email', recipientEmail: '', title: 'Hello', content: 'Words', scheduledDeliveryDate: '2027-01-01', scheduledDeliveryTime: '20:00' } },
-    { status: (s) => ({ json: (b) => { if (s === 400 && !b.success) rejectEmail = true; } }) },
-    () => {}
-  );
-  assert(rejectEmail, 'createLetter rejects missing recipient email address for email delivery with 400');
-
-  // Test 8d: Reject obsolete delivery channels (whatsapp, sms, instagram)
-  let rejectWhatsapp = false;
-  await createLetter(
-    { userId: testUserId, body: { type: 'someone', recipientName: 'Alice', deliveryChannel: 'whatsapp', recipientContact: '+1234567890', title: 'Hello', content: 'Words', scheduledDeliveryDate: '2027-01-01', scheduledDeliveryTime: '20:00' } },
-    { status: (s) => ({ json: (b) => { if (s === 400 && !b.success && b.message.includes('supported')) rejectWhatsapp = true; } }) },
-    () => {}
-  );
-  assert(rejectWhatsapp, 'createLetter rejects obsolete deliveryChannel "whatsapp" with 400');
-
-  let rejectSms = false;
-  await createLetter(
-    { userId: testUserId, body: { type: 'someone', recipientName: 'Alice', deliveryChannel: 'sms', recipientContact: '+1234567890', title: 'Hello', content: 'Words', scheduledDeliveryDate: '2027-01-01', scheduledDeliveryTime: '20:00' } },
-    { status: (s) => ({ json: (b) => { if (s === 400 && !b.success) rejectSms = true; } }) },
-    () => {}
-  );
-  assert(rejectSms, 'createLetter rejects obsolete deliveryChannel "sms" with 400');
-
-  let rejectInstagram = false;
-  await createLetter(
-    { userId: testUserId, body: { type: 'someone', recipientName: 'Alice', deliveryChannel: 'instagram', recipientContact: '@alice', title: 'Hello', content: 'Words', scheduledDeliveryDate: '2027-01-01', scheduledDeliveryTime: '20:00' } },
-    { status: (s) => ({ json: (b) => { if (s === 400 && !b.success) rejectInstagram = true; } }) },
-    () => {}
-  );
-  assert(rejectInstagram, 'createLetter rejects obsolete deliveryChannel "instagram" with 400');
-
-  // Test 8e: Accept 'link' delivery channel without recipient email
+  // Test 8c: Accept 'link' delivery channel without recipient email
   const origCreate = Letter.create;
   let linkCreated = false;
   Letter.create = async (doc) => {
@@ -234,15 +199,14 @@ async function runTests() {
   assert(createLinkSuccess && linkCreated, 'createLetter accepts "link" delivery channel without requiring recipient email');
   Letter.create = origCreate;
 
-  // 9. PHASE 8 — Resend Email Service & Template Verification
-  console.log('\n[9. PHASE 8 — Resend Email Service & Template Safety]');
+  // 9. PHASE 8 — Sealed Private Letter & Public Token Unlocking
+  console.log('\n[9. PHASE 8 — Sealed Private Letter & Public Token Unlocking]');
   const mockLetterDoc = new Letter({
     _id: new mongoose.Types.ObjectId(),
     userId: testUserId,
     type: 'someone',
     recipientName: 'Lucas Vance',
-    recipientEmail: 'lucas@example.com',
-    deliveryChannel: 'email',
+    deliveryChannel: 'link',
     title: 'A Memory to Keep',
     encryptedContent: encryptLetterContent('My private deeply personal thoughts.'),
     scheduledDeliveryDate: '2027-06-15',
@@ -252,63 +216,8 @@ async function runTests() {
     publicTokenHash: tokenSha256,
     status: 'SCHEDULED',
   });
-
-  const emailResult = await EmailService.sendLetterEmail(mockLetterDoc, rawPublicToken);
-  if (!process.env.RESEND_API_KEY) {
-    assert(emailResult.isConfigRequired === true, 'EmailService returns isConfigRequired=true when RESEND_API_KEY is unset');
-  } else {
-    assert(typeof emailResult.success === 'boolean', 'EmailService interacts with real Resend API endpoint');
-  }
-
-  // Frontend URL Resolution Tests for Production & Local Development
-  console.log('\n[9b. Public Frontend URL Resolution for Letter Links]');
-  const savedEnv = { ...process.env };
-
-  try {
-    // Test 1: Production mode with APP_PUBLIC_URL
-    process.env.NODE_ENV = 'production';
-    process.env.APP_PUBLIC_URL = 'https://my-diary-nine-tau.vercel.app';
-    delete process.env.FRONTEND_URL;
-    delete process.env.VITE_PUBLIC_APP_URL;
-    delete process.env.CORS_ORIGIN;
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects APP_PUBLIC_URL in production');
-
-    // Test 2: Production mode with FRONTEND_URL comma-separated
-    delete process.env.APP_PUBLIC_URL;
-    process.env.FRONTEND_URL = 'https://my-diary-nine-tau.vercel.app,http://localhost:5173';
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() parses comma-separated FRONTEND_URL and selects production origin');
-
-    // Test 3: Production mode with VITE_PUBLIC_APP_URL
-    delete process.env.FRONTEND_URL;
-    process.env.VITE_PUBLIC_APP_URL = 'https://my-diary-nine-tau.vercel.app';
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects VITE_PUBLIC_APP_URL');
-
-    // Test 4: Production mode with CORS_ORIGIN
-    delete process.env.VITE_PUBLIC_APP_URL;
-    process.env.CORS_ORIGIN = 'https://my-diary-nine-tau.vercel.app';
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() respects CORS_ORIGIN');
-
-    // Test 5: Production mode with no env vars set (fallback)
-    delete process.env.CORS_ORIGIN;
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() defaults to https://my-diary-nine-tau.vercel.app in production when unset');
-
-    // Test 6: Production mode with localhost misconfigured in env var (prevents localhost in prod)
-    process.env.APP_PUBLIC_URL = 'http://localhost:5173';
-    assert(getPublicFrontendUrl() === 'https://my-diary-nine-tau.vercel.app', 'getPublicFrontendUrl() filters out localhost in production and falls back safely');
-
-    // Test 7: Local development with no env vars set
-    process.env.NODE_ENV = 'development';
-    delete process.env.APP_PUBLIC_URL;
-    delete process.env.RENDER;
-    delete process.env.VERCEL;
-    assert(getPublicFrontendUrl() === 'http://localhost:5173', 'getPublicFrontendUrl() defaults to http://localhost:5173 in local development');
-
-    // Test 8: Local development with custom port (e.g. 5174)
-    process.env.APP_PUBLIC_URL = 'http://localhost:5174';
-    assert(getPublicFrontendUrl() === 'http://localhost:5174', 'getPublicFrontendUrl() preserves custom local port in development');
-  } finally {
-    process.env = savedEnv;
-  }
+  assert(mockLetterDoc.deliveryChannel === 'link', 'Letter document created with Private Link delivery channel');
+  assert(mockLetterDoc.status === 'SCHEDULED', 'Letter initially sealed with SCHEDULED status');
 
   // 10. PHASE 8 — Server-Side Scheduler & Atomic Status Transition Tests
   console.log('\n[10. PHASE 8 — Server-Side Scheduler & Idempotent Claiming]');
@@ -317,8 +226,7 @@ async function runTests() {
     userId: testUserId,
     type: 'someone',
     recipientName: 'Sophia',
-    recipientEmail: 'sophia@example.com',
-    deliveryChannel: 'email',
+    deliveryChannel: 'link',
     title: 'One Year From Tonight',
     encryptedContent: encryptLetterContent('Here is the letter text.'),
     encryptedToken: encryptLetterContent(rawPublicToken),
@@ -349,7 +257,7 @@ async function runTests() {
   dueLetterDoc.save = async () => {};
 
   await processScheduledLettersBatch();
-  assert(claimedStatus === 'PROCESSING', 'Scheduler atomically transitions letter to PROCESSING state to prevent duplicate delivery');
+  assert(claimedStatus === 'DELIVERED', 'Scheduler atomically transitions due letter to DELIVERED state for private link access');
   assert(dueLetterDoc.status === 'DELIVERED' || dueLetterDoc.status === 'CONFIG_REQUIRED', 'Scheduler marks letter status after delivery attempt');
 
   Letter.find = origLetterFind;
@@ -815,8 +723,7 @@ async function runTests() {
     userId: userA_Id,
     type: 'someone',
     recipientName: 'Lucas',
-    recipientEmail: 'lucas@example.com',
-    deliveryChannel: 'email',
+    deliveryChannel: 'link',
     title: 'Future Letter for Tomorrow',
     encryptedContent: encryptLetterContent('Hello Lucas from the past!'),
     encryptedToken: encryptLetterContent(schedLetterRawToken),

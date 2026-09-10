@@ -172,7 +172,7 @@ export type LetterStatus =
   | 'DISPATCHED'
   | 'DELIVERABLE';
 
-export type DeliveryChannel = 'link' | 'email';
+export type DeliveryChannel = 'link';
 
 export interface LetterRecord {
   id: string;
