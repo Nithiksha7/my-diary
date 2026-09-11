@@ -26,17 +26,30 @@ const LiveCountdownBadge: React.FC<{ timestamp: number; onComplete?: () => void 
   onComplete,
 }) => {
   const [countdown, setCountdown] = React.useState(() => calculateRemainingCountdown(timestamp));
+  const completedRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (countdown.isReady) {
+      if (!completedRef.current) {
+        completedRef.current = true;
+        if (onComplete) onComplete();
+      }
+      return;
+    }
+
     const timer = setInterval(() => {
       const next = calculateRemainingCountdown(timestamp);
       setCountdown(next);
-      if (next.isReady && onComplete) {
-        onComplete();
+      if (next.isReady) {
+        clearInterval(timer);
+        if (!completedRef.current) {
+          completedRef.current = true;
+          if (onComplete) onComplete();
+        }
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [timestamp, onComplete]);
+  }, [timestamp, countdown.isReady, onComplete]);
 
   if (countdown.isReady) {
     return (

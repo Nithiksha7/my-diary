@@ -118,25 +118,23 @@ const AuthGate: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const [publicToken, setPublicToken] = useState<string | null>(() => getPublicLetterToken());
 
-  // 1. If public letter token is present in URL, render public viewer without requiring login
+  // 1. If public letter token is present in URL, render public viewer directly without DiaryProvider
   if (publicToken) {
     return (
-      <DiaryProvider>
-        <div className="min-h-screen relative selection:bg-amber-500/20 selection:text-amber-200">
-          <RealMediaAtmosphere />
-          <div className="film-grain" />
-          <LetterEnvelopeViewer
-            token={publicToken}
-            onClose={() => {
-              setPublicToken(null);
-              if (typeof window !== 'undefined' && window.history.replaceState) {
-                window.history.replaceState({}, document.title, window.location.pathname.replace(/\/letter\/[^/]+/, '/'));
-              }
-              window.location.href = '/';
-            }}
-          />
-        </div>
-      </DiaryProvider>
+      <div className="min-h-screen relative selection:bg-amber-500/20 selection:text-amber-200">
+        <RealMediaAtmosphere />
+        <div className="film-grain" />
+        <LetterEnvelopeViewer
+          token={publicToken}
+          onClose={() => {
+            setPublicToken(null);
+            if (typeof window !== 'undefined' && window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname.replace(/\/letter\/[^/]+/, '/'));
+            }
+            window.location.href = '/';
+          }}
+        />
+      </div>
     );
   }
 

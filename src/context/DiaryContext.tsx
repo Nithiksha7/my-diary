@@ -145,6 +145,7 @@ const STORAGE_KEYS = {
 const DiaryContext = createContext<DiaryContextType | null>(null);
 
 export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, migrateFromLocalStorage } = useAuth();
   const [activeLetterToken, setActiveLetterToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -346,23 +347,34 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return [];
   });
 
+  const lettersRef = useRef<LetterRecord[]>(letters);
+  useEffect(() => {
+    lettersRef.current = letters;
+  }, [letters]);
+
   const refreshLetters = useCallback(async () => {
     try {
       const res = await api.letters.getLetters();
       if (res.success && Array.isArray(res.letters)) {
-        setLetters(res.letters);
+        setLetters((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(res.letters)) {
+            return prev;
+          }
+          return res.letters;
+        });
       }
     } catch {
       // Local mode fallback
     }
   }, []);
 
-  // Sync letters from backend server on mount & interval
+  // Sync letters from backend server on mount & interval only when authenticated
   useEffect(() => {
+    if (!isAuthenticated) return;
     refreshLetters();
-    const interval = setInterval(refreshLetters, 3000);
+    const interval = setInterval(refreshLetters, 10000);
     return () => clearInterval(interval);
-  }, [refreshLetters]);
+  }, [isAuthenticated, refreshLetters]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SEALED_LETTERS, JSON.stringify(letters));
@@ -454,7 +466,6 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSettings((prev) => ({ ...prev, activeTheme: safeTheme }));
   }, []);
 
-  const { isAuthenticated, migrateFromLocalStorage } = useAuth();
   const migratedRef = useRef(false);
 
   // Background migration of local storage data upon user login
@@ -1096,7 +1107,7 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Fallback to local letters store
     }
 
-    const localMatch = letters.find((l) => l.token === token || l.id === token);
+    const localMatch = lettersRef.current.find((l) => l.token === token || l.id === token);
     if (localMatch) {
       const isReady = Date.now() >= localMatch.scheduledDeliveryTimestamp || localMatch.status === 'DELIVERED' || localMatch.status === 'OPENED';
       if (!isReady) {
@@ -1110,7 +1121,7 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     return null;
-  }, [letters]);
+  }, []);
 
   const openLetter = useCallback(async (token: string): Promise<LetterRecord | null> => {
     try {
@@ -1126,12 +1137,19 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Fallback
     }
 
+    let openedLetter: LetterRecord | null = null;
     setLetters((prev) =>
-      prev.map((l) => (l.token === token || l.id === token ? { ...l, status: 'OPENED', openedAt: new Date().toISOString() } : l))
+      prev.map((l) => {
+        if (l.token === token || l.id === token) {
+          const updated = { ...l, status: 'OPENED' as const, openedAt: new Date().toISOString() };
+          openedLetter = updated;
+          return updated;
+        }
+        return l;
+      })
     );
-    const match = letters.find((l) => l.token === token || l.id === token);
-    return match ? { ...match, status: 'OPENED' } : null;
-  }, [letters]);
+    return openedLetter || lettersRef.current.find((l) => l.token === token || l.id === token) || null;
+  }, []);
 
   const fastForwardDelivery = useCallback(async (token: string): Promise<LetterRecord | null> => {
     try {
@@ -1147,16 +1165,24 @@ export const DiaryProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Fallback
     }
 
+    let ffLetter: LetterRecord | null = null;
     setLetters((prev) =>
-      prev.map((l) =>
-        l.token === token || l.id === token
-          ? { ...l, scheduledDeliveryTimestamp: Date.now() - 1000, status: 'DELIVERED', deliveredAt: new Date().toISOString() }
-          : l
-      )
+      prev.map((l) => {
+        if (l.token === token || l.id === token) {
+          const updated = {
+            ...l,
+            scheduledDeliveryTimestamp: Date.now() - 1000,
+            status: 'DELIVERED' as const,
+            deliveredAt: new Date().toISOString(),
+          };
+          ffLetter = updated;
+          return updated;
+        }
+        return l;
+      })
     );
-    const match = letters.find((l) => l.token === token || l.id === token);
-    return match ? { ...match, status: 'DELIVERED' } : null;
-  }, [letters]);
+    return ffLetter || lettersRef.current.find((l) => l.token === token || l.id === token) || null;
+  }, []);
 
   const retryLetterDelivery = useCallback(async (id: string) => {
     try {

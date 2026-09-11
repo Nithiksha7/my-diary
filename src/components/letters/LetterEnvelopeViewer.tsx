@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Lock,
   Mail,
@@ -9,19 +9,142 @@ import {
   Heart
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { useDiary } from '../../context/DiaryContext';
+import { api } from '../../services/api';
 import type { LetterRecord, ThemeId } from '../../types';
 import { formatTime12h, calculateRemainingCountdown } from '../../utils/dateUtils';
 
-const EnvelopeCountdownTimer: React.FC<{ timestamp: number }> = ({ timestamp }) => {
+async function fetchPublicLetter(token: string): Promise<LetterRecord | null> {
+  try {
+    const res = await api.letters.getPublicLetter(token);
+    if (res.success && res.letter) {
+      return res.letter as LetterRecord;
+    }
+  } catch {
+    // Fallback to local storage for offline / dev preview
+  }
+  const saved = localStorage.getItem('my_diary_sealed_letters_v3') || localStorage.getItem('my_diary_letters_v2_clean');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const match = parsed.find((l: any) => l.token === token || l.id === token);
+        if (match) {
+          const isReady = Date.now() >= match.scheduledDeliveryTimestamp || match.status === 'DELIVERED' || match.status === 'OPENED';
+          return {
+            ...match,
+            status: isReady ? (match.status === 'OPENED' ? 'OPENED' : 'DELIVERED') : 'SCHEDULED',
+            content: isReady ? match.content : '',
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+async function openPublicLetterDirect(token: string): Promise<LetterRecord | null> {
+  try {
+    const res = await api.letters.openPublicLetter(token);
+    if (res.success && res.letter) {
+      return res.letter as LetterRecord;
+    }
+  } catch {
+    // Fallback
+  }
+  const saved = localStorage.getItem('my_diary_sealed_letters_v3');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        let matched: any = null;
+        const updated = parsed.map((l: any) => {
+          if (l.token === token || l.id === token) {
+            matched = { ...l, status: 'OPENED', openedAt: new Date().toISOString() };
+            return matched;
+          }
+          return l;
+        });
+        localStorage.setItem('my_diary_sealed_letters_v3', JSON.stringify(updated));
+        if (matched) return matched;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+async function fastForwardPublicLetterDirect(token: string): Promise<LetterRecord | null> {
+  try {
+    const res = await api.letters.fastForwardPublicLetter(token);
+    if (res.success && res.letter) {
+      return res.letter as LetterRecord;
+    }
+  } catch {
+    // Fallback
+  }
+  const saved = localStorage.getItem('my_diary_sealed_letters_v3');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        let matched: any = null;
+        const updated = parsed.map((l: any) => {
+          if (l.token === token || l.id === token) {
+            matched = {
+              ...l,
+              scheduledDeliveryTimestamp: Date.now() - 1000,
+              status: 'DELIVERED',
+              deliveredAt: new Date().toISOString(),
+            };
+            return matched;
+          }
+          return l;
+        });
+        localStorage.setItem('my_diary_sealed_letters_v3', JSON.stringify(updated));
+        if (matched) return matched;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+const EnvelopeCountdownTimer: React.FC<{ timestamp: number; onComplete?: () => void }> = ({
+  timestamp,
+  onComplete,
+}) => {
   const [countdown, setCountdown] = React.useState(() => calculateRemainingCountdown(timestamp));
+  const onCompleteRef = React.useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const completedRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (countdown.isReady) {
+      if (!completedRef.current) {
+        completedRef.current = true;
+        onCompleteRef.current?.();
+      }
+      return;
+    }
+
     const timer = setInterval(() => {
-      setCountdown(calculateRemainingCountdown(timestamp));
+      const next = calculateRemainingCountdown(timestamp);
+      setCountdown(next);
+      if (next.isReady) {
+        clearInterval(timer);
+        if (!completedRef.current) {
+          completedRef.current = true;
+          onCompleteRef.current?.();
+        }
+      }
     }, 1000);
+
     return () => clearInterval(timer);
-  }, [timestamp]);
+  }, [timestamp, countdown.isReady]);
 
   if (countdown.isReady) {
     return (
@@ -48,26 +171,36 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
   token,
   onClose,
 }) => {
-  const { fetchLetterByToken, openLetter, fastForwardDelivery, activeTheme } = useDiary();
   const [letter, setLetter] = useState<LetterRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [timeExpired, setTimeExpired] = useState(false);
 
   // Animation states
   const [isOpening, setIsOpening] = useState(false);
   const [isUnfolded, setIsUnfolded] = useState(false);
 
+  // Keep track of loaded token to strictly prevent reloading flash and unnecessary re-fetches
+  const loadedTokenRef = useRef<string | null>(null);
+
   useEffect(() => {
     let mounted = true;
+
+    // If letter for this exact token is already loaded, do not show loading spinner again
+    if (loadedTokenRef.current === token) {
+      return;
+    }
+
     const loadLetter = async () => {
       setLoading(true);
       try {
-        const data = await fetchLetterByToken(token);
+        const data = await fetchPublicLetter(token);
         if (mounted) {
           if (!data) {
             setError('This letter link could not be found or has expired.');
           } else {
             setLetter(data);
+            loadedTokenRef.current = token;
             if (data.status === 'OPENED' || data.status === 'opened') {
               setIsUnfolded(true);
             }
@@ -84,19 +217,35 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
     return () => {
       mounted = false;
     };
-  }, [token, fetchLetterByToken]);
+  }, [token]);
 
-  const isDeliverable = letter ? (
-    Date.now() >= letter.scheduledDeliveryTimestamp ||
-    letter.isDeliverable === true ||
-    letter.status === 'DELIVERED' ||
-    letter.status === 'OPENED' ||
-    letter.status === 'CONFIG_REQUIRED' ||
-    letter.status === 'DELIVERABLE' ||
-    letter.status === 'deliverable' ||
-    letter.status === 'delivered' ||
-    letter.status === 'opened'
-  ) : false;
+  const handleCountdownComplete = useCallback(async () => {
+    setTimeExpired(true);
+    // Silently refresh letter status from server without triggering full-screen loading
+    try {
+      const data = await fetchPublicLetter(token);
+      if (data) {
+        setLetter(data);
+      }
+    } catch {
+      // Ignore silent refresh error
+    }
+  }, [token]);
+
+  const isDeliverable = Boolean(
+    timeExpired ||
+    (letter && (
+      Date.now() >= letter.scheduledDeliveryTimestamp ||
+      letter.isDeliverable === true ||
+      letter.status === 'DELIVERED' ||
+      letter.status === 'OPENED' ||
+      letter.status === 'CONFIG_REQUIRED' ||
+      letter.status === 'DELIVERABLE' ||
+      letter.status === 'deliverable' ||
+      letter.status === 'delivered' ||
+      letter.status === 'opened'
+    ))
+  );
 
   const handleOpenEnvelope = async () => {
     if (!letter || !isDeliverable || isOpening || isUnfolded) return;
@@ -115,12 +264,14 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
       // Ignore
     }
 
-    // Call server to mark opened
+    // Call server to mark opened and fetch decrypted content
     try {
-      const updated = await openLetter(letter.token);
-      if (updated) setLetter(updated);
-    } catch {
-      // Ignore
+      const updated = await openPublicLetterDirect(letter.token);
+      if (updated) {
+        setLetter(updated);
+      }
+    } catch (err) {
+      console.error('Failed to open letter:', err);
     }
 
     setTimeout(() => {
@@ -132,9 +283,10 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
   const handleFastForward = async () => {
     if (!letter) return;
     try {
-      const updated = await fastForwardDelivery(letter.token);
+      const updated = await fastForwardPublicLetterDirect(letter.token);
       if (updated) {
         setLetter(updated);
+        setTimeExpired(true);
       }
     } catch (e) {
       console.error(e);
@@ -316,7 +468,10 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
                 </div>
 
                 {/* Live Real-time Countdown Timer */}
-                <EnvelopeCountdownTimer timestamp={letter.scheduledDeliveryTimestamp} />
+                <EnvelopeCountdownTimer
+                  timestamp={letter.scheduledDeliveryTimestamp}
+                  onComplete={handleCountdownComplete}
+                />
 
                 {/* Development demo fast-forward helper */}
                 <div className="pt-2 border-t border-white/10">
@@ -357,7 +512,7 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
             {/* Stationery Paper */}
             <div
               className={`w-full rounded-3xl p-6 sm:p-10 md:p-12 border transition-all duration-500 shadow-2xl relative ${getStationeryClasses(
-                letter.sealTheme || activeTheme
+                letter.sealTheme || 'ocean'
               )}`}
             >
               {/* Top Letter Header */}
@@ -384,7 +539,7 @@ export const LetterEnvelopeViewer: React.FC<LetterEnvelopeViewerProps> = ({
                 style={{
                   lineHeight: '34px',
                   backgroundImage: `linear-gradient(to bottom, transparent 33px, ${getRuledLineColor(
-                    letter.sealTheme || activeTheme
+                    letter.sealTheme || 'ocean'
                   )} 34px)`,
                   backgroundSize: '100% 34px',
                 }}
