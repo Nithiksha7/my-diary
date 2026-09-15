@@ -1,10 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useDiary } from '../../context/DiaryContext';
 import { THEME_MEDIA } from '../../utils/themeMedia';
+import type { ThemeId } from '../../types';
+import type { ThemeBackgroundImage } from '../../utils/themeBackgrounds';
+
+// Safe helper to access DiaryContext without throwing when rendered outside DiaryProvider (e.g. public letter viewer)
+function useSafeDiary() {
+  try {
+    return useDiary();
+  } catch {
+    return null;
+  }
+}
+
+const DEFAULT_THEME: ThemeId = 'ocean';
+const DEFAULT_MEDIA = THEME_MEDIA.ocean;
+const DEFAULT_BACKGROUND: ThemeBackgroundImage = {
+  id: 'ocean-default',
+  themeId: 'ocean',
+  index: 1,
+  name: DEFAULT_MEDIA.name,
+  path: DEFAULT_MEDIA.fallbackImageUrl,
+  fallbackUrl: DEFAULT_MEDIA.fallbackImageUrl,
+};
 
 export const RealMediaAtmosphere: React.FC = () => {
-  const { activeTheme, activeBackground } = useDiary();
-  const mediaConfig = THEME_MEDIA[activeTheme] || THEME_MEDIA.ocean;
+  const diaryContext = useSafeDiary();
+  const activeTheme = diaryContext?.activeTheme || DEFAULT_THEME;
+  const activeBackground = diaryContext?.activeBackground || DEFAULT_BACKGROUND;
+  const mediaConfig = THEME_MEDIA[activeTheme] || DEFAULT_MEDIA;
 
   // Track active and incoming image sources for silky cross-fade
   const [currentSrc, setCurrentSrc] = useState<string>(() => activeBackground?.fallbackUrl || mediaConfig.fallbackImageUrl);
